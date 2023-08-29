@@ -8,11 +8,11 @@
 
 This repository contains official **source code** and **writeups** for challenges from [SekaiCTF 2023][CTFTime Event].
 
-[CTFTime Event][CTFTime Event] •
 [Website][Website] •
 [Discord][Discord] •
 [Blog][Blog] •
-[Twitter][Twitter]
+[Twitter][Twitter] •
+[SekaiCTF 2022][CTF 2022]
 
 ---
 
@@ -138,6 +138,7 @@ Any **non-code/program content** (writeups, READMEs, descriptions) in this repos
 [Blog]: https://sekai.team/
 [Twitter]: https://twitter.com/projectsekaictf
 [Discord]: https://discord.gg/6gk7jhCgGX
+[CTF 2022]: https://github.com/project-sekai-ctf/sekaictf-2022
 
 [agpl]: https://www.gnu.org/licenses/agpl-3.0.en.html
 [cc-by-nc-sa]: https://creativecommons.org/licenses/by-nc-sa/4.0/

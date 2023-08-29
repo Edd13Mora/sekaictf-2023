@@ -1,4 +1,4 @@
-## TL;DR
+## How to run the exploit
 
 - Edit the script to change reverse shell address and port
 - Spawn a listen netcat
